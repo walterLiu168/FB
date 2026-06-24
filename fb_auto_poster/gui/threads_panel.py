@@ -476,6 +476,11 @@ class ThreadsPanel(ttk.Frame):
             messagebox.showerror("錯誤", "發文引擎尚未啟動")
             return
 
+        if not self.engine.is_browser_ready():
+            err = self.engine.get_browser_error()
+            messagebox.showerror("錯誤", f"瀏覽器尚未就緒\n{err}\n\n請確認 Playwright 環境正常")
+            return
+
         self._post_status.config(text="發文中...")
 
         # 使用 IG 帳號 ID 提交（engine 會用 ig_cookies_ 前綴讀取）

@@ -91,6 +91,7 @@ class SessionManager:
 
         # 狀態
         self._status: dict[str, str] = {}  # account_id → status
+        self._browser_error: str = ""  # browser launch error
 
     # ── GUI 層呼叫的介面 ──
 
@@ -115,6 +116,10 @@ class SessionManager:
     def is_browser_ready(self) -> bool:
         """檢查瀏覽器是否已初始化完成"""
         return self._browser is not None
+
+    def get_browser_error(self) -> str:
+        """取得瀏覽器啟動錯誤訊息"""
+        return getattr(self, "_browser_error", "")
 
     def get_browser(self):
         """取得共享的 BrowserManager 實例（供外部 Playwright 操作使用）。
@@ -290,6 +295,10 @@ class SessionManager:
         error_callback: Callable = None,
     ):
         """提交 Threads 發文任務"""
+        if not self.is_browser_ready():
+            err = self.get_browser_error()
+            self._call_ui(error_callback, {"error": f"瀏覽器未就緒: {err}"}) if error_callback else None
+            return
         task = PostTask(
             account_id=account_id,
             task_type="threads_post",
@@ -312,6 +321,10 @@ class SessionManager:
         error_callback: Callable = None,
     ):
         """提交 Threads 海巡回覆任務"""
+        if not self.is_browser_ready():
+            err = self.get_browser_error()
+            self._call_ui(error_callback, {"error": f"瀏覽器未就緒: {err}"}) if error_callback else None
+            return
         task = PostTask(
             account_id=account_id,
             task_type="threads_reply",
@@ -330,6 +343,9 @@ class SessionManager:
         callback=None, error_callback=None,
     ):
         """提交 IG 發文任務"""
+        if not self.is_browser_ready():
+            self._call_ui(error_callback, {"error": "瀏覽器未就緒"}) if error_callback else None
+            return
         self._task_queue.put(PostTask(account_id, "ig_post",
             {"caption": caption, "image_paths": image_paths}, callback, error_callback))
 
@@ -338,6 +354,9 @@ class SessionManager:
         dry_run=False, callback=None, error_callback=None,
     ):
         """提交 IG Hashtag 巡邏留言任務"""
+        if not self.is_browser_ready():
+            self._call_ui(error_callback, {"error": "瀏覽器未就緒"}) if error_callback else None
+            return
         self._task_queue.put(PostTask(account_id, "ig_patrol",
             {"keywords": keywords, "max_comments": max_comments, "dry_run": dry_run},
             callback, error_callback))
@@ -346,6 +365,9 @@ class SessionManager:
         self, account_id: str, callback=None, error_callback=None,
     ):
         """提交暖號任務（執行一個時段）"""
+        if not self.is_browser_ready():
+            self._call_ui(error_callback, {"error": "瀏覽器未就緒"}) if error_callback else None
+            return
         self._task_queue.put(PostTask(account_id, "warmup",
             {}, callback, error_callback))
 
@@ -370,7 +392,12 @@ class SessionManager:
         """非同步工作循環"""
         # 初始化瀏覽器
         self._browser = BrowserManager()
-        await self._browser.start()
+        try:
+            await self._browser.start()
+        except Exception as e:
+            self._browser_error = str(e)
+            log("ENGINE", "system", f"瀏覽器啟動失敗: {e}", "❌")
+            return
 
         # 註冊到足跡清理系統
         from core.footprint_cleaner import register_browser_manager
@@ -414,8 +441,15 @@ class SessionManager:
             if not cookie_json:
                 cookie_json = load_ig_cookie(task.account_id)  # fallback to IG cookie
             if not cookie_json:
-                self._call_ui(task.error_callback, {"error": "找不到 Threads Cookie，請匯入 threads.net 的 Cookie"}) if task.error_callback else None
+                self._call_ui(task.error_callback, {"error": "找不到 Threads Cookie"}) if task.error_callback else None
                 return
+            # Fix: Threads export has domain .threads.com but we navigate to threads.net
+            # Change cookie domain so Playwright sends them to the right host
+            cookies_data = json.loads(cookie_json)
+            for c in cookies_data:
+                if c.get("domain") == ".threads.com":
+                    c["domain"] = ".threads.net"
+            cookie_json = json.dumps(cookies_data)
         elif is_ig:
             from gui.threads_panel import load_ig_cookie
             cookie_json = load_ig_cookie(task.account_id)
