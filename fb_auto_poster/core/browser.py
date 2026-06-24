@@ -311,15 +311,31 @@ class BrowserManager:
         shield_script = build_shield_script(account_seed=account_id)
         await context.add_init_script(shield_script)
 
-        # 載入已儲存的 Cookie 維持登入狀態
+        # 先建一個 page 並導航到目標域名（Playwright 要求先有 origin 才能 inject cookies）
+        page = await context.new_page()
+
+        _domain_guess = "https://www.facebook.com/"
         if cookie_str:
             try:
                 cookies = json.loads(cookie_str)
-                await context.add_cookies(cookies)
-            except (json.JSONDecodeError, Exception):
-                pass
+                # 猜域名 → 導航到對應網站以建立 origin
+                _all_domains = {c.get("domain", "") for c in cookies}
+                if ".threads.net" in _all_domains or ".threads.com" in _all_domains:
+                    _domain_guess = "https://www.threads.net/"
+                elif ".instagram.com" in _all_domains:
+                    _domain_guess = "https://www.instagram.com/"
 
-        page = await context.new_page()
+                await page.goto(_domain_guess, wait_until="domcontentloaded", timeout=20000)
+                await asyncio.sleep(1)
+
+                # 注入 cookies（現在 origin 已建立，cookies 才會被接受）
+                await context.add_cookies(cookies)
+                await page.reload(wait_until="domcontentloaded", timeout=20000)
+                await asyncio.sleep(1)
+                log("BROWSER", "context", f"Cookies injected for {account_id} → {_domain_guess}", "🍪")
+            except (json.JSONDecodeError, Exception) as e:
+                log("BROWSER", "context", f"Cookie injection failed: {e}", "⚠️")
+
         self._contexts[account_id] = context
         self._pages[account_id] = page
         return context
