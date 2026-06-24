@@ -35,6 +35,8 @@ from core.interactor import Interactor
 from core.fb_graph_poster import FBPageManager, FBGraphAPI, FBGraphAPIError, post_via_api
 from core.threads_poster import ThreadsPoster
 from core.threads_replier import ThreadsReplier, search_and_reply
+from core.instagram_poster import InstagramPoster
+from core.instagram_replier import InstagramReplier, ig_patrol_and_comment
 from utils.logger import log
 
 
@@ -74,6 +76,8 @@ class SessionManager:
         self._interactor = Interactor()
         self._threads_poster = ThreadsPoster()
         self._threads_replier = ThreadsReplier()
+        self._ig_poster = InstagramPoster()
+        self._ig_replier = InstagramReplier()
 
         self._task_queue: queue.Queue = queue.Queue()
         self._thread: Optional[threading.Thread] = None
@@ -319,6 +323,23 @@ class SessionManager:
         )
         self._task_queue.put(task)
 
+    def instagram_post_now(
+        self, account_id: str, caption: str, image_paths: list[str],
+        callback=None, error_callback=None,
+    ):
+        """提交 IG 發文任務"""
+        self._task_queue.put(PostTask(account_id, "ig_post",
+            {"caption": caption, "image_paths": image_paths}, callback, error_callback))
+
+    def instagram_patrol_now(
+        self, account_id: str, keywords: list[str], max_comments=10,
+        dry_run=False, callback=None, error_callback=None,
+    ):
+        """提交 IG Hashtag 巡邏留言任務"""
+        self._task_queue.put(PostTask(account_id, "ig_patrol",
+            {"keywords": keywords, "max_comments": max_comments, "dry_run": dry_run},
+            callback, error_callback))
+
     def get_status(self, account_id: str) -> str:
         return self._status.get(account_id, "就緒")
 
@@ -375,6 +396,7 @@ class SessionManager:
         """執行單一任務"""
         # ── Threads 任務用 IG 帳號 ──
         is_threads = task.task_type.startswith("threads_")
+        is_ig = task.task_type.startswith("ig_")
 
         if is_threads:
             # 載入 IG cookie
@@ -382,6 +404,12 @@ class SessionManager:
             cookie_json = load_ig_cookie(task.account_id)
             if not cookie_json:
                 self._call_ui(task.error_callback, {"error": "找不到 IG Cookie，請先在 Threads 面板匯入"}) if task.error_callback else None
+                return
+        elif is_ig:
+            from gui.threads_panel import load_ig_cookie
+            cookie_json = load_ig_cookie(task.account_id)
+            if not cookie_json:
+                self._call_ui(task.error_callback, {"error": "找不到 IG Cookie"}) if task.error_callback else None
                 return
         else:
             acc = self._account_manager.get(task.account_id)
@@ -486,10 +514,21 @@ class SessionManager:
                 )
             elif task.task_type == "threads_reply":
                 result = await search_and_reply(
-                    page,
-                    replier=self._threads_replier,
+                    page, replier=self._threads_replier,
                     keywords=task.params["keywords"],
                     max_replies=task.params["max_replies"],
+                    dry_run=task.params["dry_run"],
+                )
+            elif task.task_type == "ig_post":
+                result = await self._ig_poster.post_carousel(
+                    page, caption=task.params["caption"],
+                    image_paths=task.params["image_paths"],
+                )
+            elif task.task_type == "ig_patrol":
+                result = await ig_patrol_and_comment(
+                    page, replier=self._ig_replier,
+                    keywords=task.params["keywords"],
+                    max_comments=task.params["max_comments"],
                     dry_run=task.params["dry_run"],
                 )
 

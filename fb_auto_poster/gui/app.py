@@ -15,6 +15,7 @@ from gui.poster_panel import PosterPanel
 from gui.scheduler_panel import SchedulerPanel
 from gui.nurturer_panel import NurturerPanel
 from gui.threads_panel import ThreadsPanel
+from gui.instagram_panel import InstagramPanel
 from gui.log_panel import LogPanel
 from gui.system_tray import SystemTray, setup_autostart, is_autostart_enabled
 from core.fb_graph_poster import FBPageManager
@@ -151,6 +152,13 @@ class FBPosterApp(ttk.Window):
             engine=self.session_manager, scheduler=self.scheduler,
         )
         self.notebook.add(self.threads_panel, text="🧵 Threads")
+
+        # Instagram 分頁
+        self.instagram_panel = InstagramPanel(
+            self.notebook,
+            engine=self.session_manager, scheduler=self.scheduler,
+        )
+        self.notebook.add(self.instagram_panel, text="📸 IG")
 
         # 日誌分頁
         self.log_panel = LogPanel(self.notebook)
