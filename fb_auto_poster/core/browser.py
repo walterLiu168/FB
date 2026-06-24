@@ -266,7 +266,8 @@ class BrowserManager:
             extra_args = []
 
         self._browser = await self._playwright.chromium.launch(
-            headless=False,  # 不跑 headless，FB 對 headless 偵測非常嚴格
+            headless=False,
+            channel="chrome",  # 使用本機真實 Chrome，避免沙箱 mkdtemp 封鎖
             args=_LAUNCH_ARGS + extra_args,
         )
 

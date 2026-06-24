@@ -499,18 +499,36 @@ class FBPosterApp(ttk.Window):
         # ── 延後啟動瀏覽器引擎 ──
         self.session_manager.start()
 
+        # 建立瀏覽器狀態顯示
+        self._browser_status_var = tk.StringVar(value="⏳ 瀏覽器啟動中...")
+        self._browser_status_lbl = ttk.Label(
+            self, textvariable=self._browser_status_var,
+            bootstyle="warning", font=("Microsoft JhengHei", 9),
+        )
+        self._browser_status_lbl.pack(side=tk.BOTTOM, fill=tk.X, padx=2, pady=1)
+
         # 設定共享瀏覽器給 scraper 模組
+        self._browser_retries = 0
         def _wait_and_share_browser():
+            self._browser_retries += 1
             if self.session_manager.is_browser_ready():
+                self._browser_status_var.set("🟢 瀏覽器就緒")
+                self._browser_status_lbl.configure(bootstyle="success")
                 browser = self.session_manager.get_browser()
-                # 從 engine 取得事件迴圈（透過 worker thread 的 loop）
                 loop = getattr(self.session_manager, '_loop', None)
                 if browser and loop:
                     import core.scraper as scraper
                     scraper.set_shared_browser(browser, loop)
                     log("ENGINE", "system", "共享瀏覽器已就緒 (rakuya/抓圖共用)", "✅")
             else:
-                self.after(2000, _wait_and_share_browser)
+                err = self.session_manager.get_browser_error()
+                if self._browser_retries > 15:
+                    self._browser_status_var.set(f"🔴 瀏覽器啟動失敗 (已重試 {self._browser_retries} 次)")
+                    self._browser_status_lbl.configure(bootstyle="danger")
+                    if err:
+                        log("ENGINE", "system", f"瀏覽器錯誤: {err}", "❌")
+                else:
+                    self.after(2000, _wait_and_share_browser)
 
         self.after(3000, _wait_and_share_browser)
 
