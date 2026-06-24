@@ -240,8 +240,9 @@ class ThreadsPanel(ttk.Frame):
         row = ttk.Frame(tab)
         row.pack(fill=tk.X, padx=12, pady=(12, 4))
         create_styled_label(row, "使用 IG 帳號:").pack(side=tk.LEFT)
-        self._ig_display_var = tk.StringVar(value="(請先在「IG 帳號」頁籤選擇帳號)")
-        create_styled_label(row, textvariable=self._ig_display_var).pack(side=tk.LEFT, padx=8)
+        self._ig_display_var = tk.StringVar(value="(請先在 IG 帳號頁籤選擇帳號)")
+        self._ig_display_label = ttk.Label(row, textvariable=self._ig_display_var)
+        self._ig_display_label.pack(side=tk.LEFT, padx=8)
 
         # ─ 文案 ─
         create_styled_label(tab, "貼文內容 (500 字內):").pack(anchor=tk.W, padx=12, pady=(8, 2))
