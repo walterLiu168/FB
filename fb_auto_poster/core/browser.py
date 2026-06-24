@@ -17,8 +17,8 @@ from typing import Optional
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 from utils.randomizer import random_user_agent, random_viewport
+from utils.logger import log
 
-# 註冊到足跡清理系統
 from core.footprint_cleaner import register_browser_manager
 
 
@@ -318,6 +318,27 @@ class BrowserManager:
         if cookie_str:
             try:
                 cookies = json.loads(cookie_str)
+                # 正規化 cookie：Playwright 要求 sameSite 為 Strict|Lax|None
+                for c in cookies:
+                    s = str(c.get("sameSite", "")).lower()
+                    if s in ("unspecified", "no_restriction", "none"):
+                        c["sameSite"] = "None"
+                    elif s == "strict":
+                        c["sameSite"] = "Strict"
+                    elif s == "lax":
+                        c["sameSite"] = "Lax"
+                    else:
+                        c["sameSite"] = "Lax"  # default
+                    # 確保 secure 欄位
+                    if "secure" not in c:
+                        c["secure"] = True
+                    # 移除 Playwright 不認識的欄位
+                    for _drop in ("hostOnly", "storeId", "id", "session"):
+                        c.pop(_drop, None)
+                    # expirationDate 是 UNIX timestamp，Playwright 接受 float
+                    if "expirationDate" in c:
+                        c["expires"] = c.pop("expirationDate")
+
                 # 猜域名 → 導航到對應網站以建立 origin
                 _all_domains = {c.get("domain", "") for c in cookies}
                 if ".threads.net" in _all_domains or ".threads.com" in _all_domains:
