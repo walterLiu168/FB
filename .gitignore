@@ -80,3 +80,7 @@ fb_auto_poster/data/schedules.json
 fb_auto_poster/data/templates.json
 fb_auto_poster/data/tiktok_accounts.json
 fb_auto_poster/data/temp_tiktok/
+
+# IG / Threads sensitive data
+fb_auto_poster/data/ig_cookies_*.json
+fb_auto_poster/data/threads_accounts.json

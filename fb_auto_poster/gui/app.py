@@ -147,7 +147,7 @@ class FBPosterApp(ttk.Window):
 
         # Threads 分頁
         self.threads_panel = ThreadsPanel(
-            self.notebook, account_ids=account_ids, account_map=account_map,
+            self.notebook,
             engine=self.session_manager, scheduler=self.scheduler,
         )
         self.notebook.add(self.threads_panel, text="🧵 Threads")

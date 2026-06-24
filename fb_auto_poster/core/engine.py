@@ -373,22 +373,30 @@ class SessionManager:
 
     async def _execute_task(self, task: PostTask):
         """執行單一任務"""
-        acc = self._account_manager.get(task.account_id)
-        if not acc:
-            msg = f"帳號不存在: {task.account_id}"
-            self._call_ui(task.error_callback, msg) if task.error_callback else None
-            return
+        # ── Threads 任務用 IG 帳號 ──
+        is_threads = task.task_type.startswith("threads_")
 
-        # 確保帳號有 browser context（載入 cookie 保持登入）
-        cookie_json = self._account_manager.get_cookie_json(task.account_id)
-        if not cookie_json:
-            msg = f"帳號 {acc.email} 沒有 Cookie，請先匯入 FB Cookie"
-            self._call_ui(task.error_callback, msg) if task.error_callback else None
-            return
+        if is_threads:
+            # 載入 IG cookie
+            from gui.threads_panel import load_ig_cookie
+            cookie_json = load_ig_cookie(task.account_id)
+            if not cookie_json:
+                self._call_ui(task.error_callback, {"error": "找不到 IG Cookie，請先在 Threads 面板匯入"}) if task.error_callback else None
+                return
+        else:
+            acc = self._account_manager.get(task.account_id)
+            if not acc:
+                msg = f"帳號不存在: {task.account_id}"
+                self._call_ui(task.error_callback, msg) if task.error_callback else None
+                return
+            cookie_json = self._account_manager.get_cookie_json(task.account_id)
+            if not cookie_json:
+                msg = f"帳號 {acc.email} 沒有 Cookie，請先匯入 FB Cookie"
+                self._call_ui(task.error_callback, msg) if task.error_callback else None
+                return
 
         page = await self._browser.get_page(task.account_id)
         if not page:
-            # 建立新的 context
             await self._browser.create_context(task.account_id, cookie_str=cookie_json)
             page = await self._browser.get_page(task.account_id)
 
