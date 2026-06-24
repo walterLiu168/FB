@@ -83,6 +83,7 @@ fb_auto_poster/data/temp_tiktok/
 
 # IG / Threads sensitive data
 fb_auto_poster/data/ig_cookies_*.json
+fb_auto_poster/data/threads_cookies_*.json
 fb_auto_poster/data/threads_accounts.json
 fb_auto_poster/data/playwright_tmp/
 

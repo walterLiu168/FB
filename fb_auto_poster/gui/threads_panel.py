@@ -49,11 +49,35 @@ def save_ig_cookie(account_id: str, cookie_json_str: str):
     return cookie_path
 
 
+def save_threads_cookie(account_id: str, cookie_json_str: str):
+    """儲存 Threads cookie 到檔案"""
+    cookie_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "data", f"threads_cookies_{account_id}.json"
+    )
+    data = json.loads(cookie_json_str)
+    with open(cookie_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return cookie_path
+
+
 def load_ig_cookie(account_id: str) -> str:
     """讀取 IG cookie"""
     cookie_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
         "data", f"ig_cookies_{account_id}.json"
+    )
+    if not os.path.exists(cookie_path):
+        return ""
+    with open(cookie_path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def load_threads_cookie(account_id: str) -> str:
+    """讀取 Threads cookie"""
+    cookie_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        "data", f"threads_cookies_{account_id}.json"
     )
     if not os.path.exists(cookie_path):
         return ""
@@ -110,7 +134,8 @@ class ThreadsPanel(ttk.Frame):
         btn_row = ttk.Frame(tab)
         btn_row.pack(fill=tk.X, padx=12, pady=8)
         create_styled_button(btn_row, "+ 新增 IG 帳號", self._add_ig_account, "success").pack(side=tk.LEFT, padx=2)
-        create_styled_button(btn_row, "匯入 Cookie", self._import_ig_cookie, "info").pack(side=tk.LEFT, padx=2)
+        create_styled_button(btn_row, "匯入 IG Cookie", self._import_ig_cookie, "info").pack(side=tk.LEFT, padx=2)
+        create_styled_button(btn_row, "匯入 Threads Cookie", self._import_threads_cookie, "info").pack(side=tk.LEFT, padx=2)
         create_styled_button(btn_row, "🗑 刪除帳號", self._delete_ig_account, "danger").pack(side=tk.LEFT, padx=2)
 
         # ── 說明 ──
@@ -131,8 +156,9 @@ class ThreadsPanel(ttk.Frame):
     def _refresh_ig_list(self):
         self._ig_list.delete(0, tk.END)
         for acc in self._ig_accounts:
-            cookie_ok = "✅" if acc.get("has_cookie") else "❌"
-            self._ig_list.insert(tk.END, f"{cookie_ok} {acc.get('username', '')}  [{acc.get('account_id', '')[:8]}...]")
+            ig_ok = "✅" if acc.get("has_cookie") else "❌"
+            th_ok = "✅" if acc.get("has_threads_cookie") else "❌"
+            self._ig_list.insert(tk.END, f"IG:{ig_ok} TH:{th_ok} {acc.get('username', '')}  [{acc.get('account_id', '')[:8]}...]")
 
     def _add_ig_account(self):
         dlg = tk.Toplevel(self)
@@ -216,6 +242,47 @@ class ThreadsPanel(ttk.Frame):
                 _save_ig_accounts(self._ig_accounts)
                 self._refresh_ig_list()
                 status_var.set("✅ Cookie 已成功匯入！")
+                dlg.after(1500, dlg.destroy)
+            except json.JSONDecodeError:
+                status_var.set("❌ JSON 格式錯誤，請檢查內容")
+
+        create_styled_button(dlg, "匯入 Cookie", import_cookie, "success").pack(pady=10)
+
+    def _import_threads_cookie(self):
+        sel = self._ig_list.curselection()
+        if not sel:
+            messagebox.showwarning("警告", "請先選擇帳號")
+            return
+
+        acc = self._ig_accounts[sel[0]]
+
+        dlg = tk.Toplevel(self)
+        dlg.title(f"匯入 Threads Cookie — {acc.get('username')}")
+        dlg.geometry("600x450")
+        dlg.transient(self)
+        dlg.grab_set()
+
+        ttk.Label(dlg, text="請貼上 Threads.net Cookie (JSON 格式):", font=("Microsoft JhengHei", 10)).pack(padx=12, pady=(12, 4))
+        ttk.Label(dlg, text="在 threads.net 上使用 Cookie-Editor 匯出", font=("Microsoft JhengHei", 8, "italic")).pack(padx=12)
+
+        cookie_text = tk.Text(dlg, height=15, wrap=tk.WORD, font=("Consolas", 9))
+        cookie_text.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
+
+        status_var = tk.StringVar()
+        ttk.Label(dlg, textvariable=status_var).pack(padx=12, pady=4)
+
+        def import_cookie():
+            raw = cookie_text.get("1.0", tk.END).strip()
+            if not raw:
+                return
+            try:
+                json.loads(raw)
+                from gui.threads_panel import save_threads_cookie
+                save_threads_cookie(acc["account_id"], raw)
+                acc["has_threads_cookie"] = True
+                _save_ig_accounts(self._ig_accounts)
+                self._refresh_ig_list()
+                status_var.set("✅ Threads Cookie 已成功匯入！")
                 dlg.after(1500, dlg.destroy)
             except json.JSONDecodeError:
                 status_var.set("❌ JSON 格式錯誤，請檢查內容")

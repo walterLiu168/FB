@@ -409,11 +409,12 @@ class SessionManager:
         is_warmup = task.task_type == "warmup"
 
         if is_threads:
-            # 載入 IG cookie
-            from gui.threads_panel import load_ig_cookie
-            cookie_json = load_ig_cookie(task.account_id)
+            from gui.threads_panel import load_threads_cookie, load_ig_cookie
+            cookie_json = load_threads_cookie(task.account_id)
             if not cookie_json:
-                self._call_ui(task.error_callback, {"error": "找不到 IG Cookie，請先在 Threads 面板匯入"}) if task.error_callback else None
+                cookie_json = load_ig_cookie(task.account_id)  # fallback to IG cookie
+            if not cookie_json:
+                self._call_ui(task.error_callback, {"error": "找不到 Threads Cookie，請匯入 threads.net 的 Cookie"}) if task.error_callback else None
                 return
         elif is_ig:
             from gui.threads_panel import load_ig_cookie
