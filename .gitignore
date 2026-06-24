@@ -89,3 +89,6 @@ fb_auto_poster/data/playwright_tmp/
 
 # Warmup state data (per-account)
 fb_auto_poster/data/warmup/
+
+# Post snapshots (auto-captured after each post)
+fb_auto_poster/data/post_snapshots/

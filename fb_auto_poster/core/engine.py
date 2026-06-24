@@ -121,6 +121,32 @@ class SessionManager:
         """取得瀏覽器啟動錯誤訊息"""
         return getattr(self, "_browser_error", "")
 
+    async def _snapshot_post(self, page, task: PostTask) -> str:
+        """發文成功後截圖存到本地資料夾
+
+        目錄結構: data/post_snapshots/{platform}/{account_id}_{日期時間}.png
+        """
+        from datetime import datetime
+
+        _pfm = {
+            "post_general": "FB",
+            "post_marketplace": "FB_marketplace",
+            "threads_post": "Threads",
+            "ig_post": "IG",
+        }
+        pfm = _pfm.get(task.task_type, task.task_type)
+        snap_dir = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data", "post_snapshots", pfm,
+        )
+        os.makedirs(snap_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = f"{task.account_id}_{ts}.png"
+        path = os.path.join(snap_dir, fname)
+        await page.screenshot(path=path, full_page=False)
+        log("SNAPSHOT", pfm, f"截圖已儲存: {fname}", "📸")
+        return path
+
     def get_browser(self):
         """取得共享的 BrowserManager 實例（供外部 Playwright 操作使用）。
 
@@ -590,6 +616,14 @@ class SessionManager:
                 else:
                     result = await run_warmup_session(page, plan)
                     record_session_done(task.account_id, result)
+
+            # ── 發文成功時自動截圖存證 ──
+            _post_types = {"post_general", "post_marketplace", "threads_post", "ig_post"}
+            if task.task_type in _post_types and result and result.get("success"):
+                try:
+                    await self._snapshot_post(page, task)
+                except Exception as _ss_err:
+                    log("SNAPSHOT", "system", f"截圖失敗: {_ss_err}", "⚠️")
 
             # UI 回呼結果
             if task.callback:
