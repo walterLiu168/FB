@@ -629,11 +629,16 @@ class SessionManager:
             if task.callback:
                 self._call_ui(task.callback, result or {})
 
-            log("POST", acc.email, f"{task.task_type} completed", "✅" if result and result.get("success", True) else "❌")
+            log("POST", task.account_id, f"{task.task_type} completed", "✅" if result and result.get("success", True) else "❌")
 
         except Exception as e:
             err_msg = f"{task.task_type} failed: {e}"
-            log("POST", acc.email, err_msg, "❌")
+            acc_name = task.account_id
+            try:
+                acc_name = acc.email  # only for FB tasks
+            except Exception:
+                pass
+            log("POST", acc_name, err_msg, "❌")
             if task.error_callback:
                 self._call_ui(task.error_callback, {"error": str(e)})
 
@@ -660,7 +665,7 @@ class SessionManager:
     def _call_ui(self, cb: Callable, result):
         """安全地在 UI 執行緒中呼叫回呼"""
         if self._ui_callback:
-            self._ui_callback(lambda: cb(result))
+            self._ui_callback(0, lambda: cb(result))
         else:
             try:
                 cb(result)
