@@ -249,6 +249,13 @@ class BrowserManager:
         self._headless = headless
         self._playwright = await async_playwright().start()
 
+        # Redirect Playwright temp to project data dir (sandbox-safe)
+        pw_tmp = os.path.join(self._data_dir, "playwright_tmp")
+        os.makedirs(pw_tmp, exist_ok=True)
+        os.environ["TMPDIR"] = pw_tmp
+        os.environ["TMP"] = pw_tmp
+        os.environ["TEMP"] = pw_tmp
+
         if headless:
             # headless 模式需要額外參數來隱藏 headless 特徵
             extra_args = [
