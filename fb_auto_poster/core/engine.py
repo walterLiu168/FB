@@ -33,6 +33,8 @@ from core.nurturer import Nurturer
 from core.deleter import Deleter
 from core.interactor import Interactor
 from core.fb_graph_poster import FBPageManager, FBGraphAPI, FBGraphAPIError, post_via_api
+from core.threads_poster import ThreadsPoster
+from core.threads_replier import ThreadsReplier, search_and_reply
 from utils.logger import log
 
 
@@ -70,6 +72,8 @@ class SessionManager:
         self._nurturer = Nurturer()
         self._deleter = Deleter()
         self._interactor = Interactor()
+        self._threads_poster = ThreadsPoster()
+        self._threads_replier = ThreadsReplier()
 
         self._task_queue: queue.Queue = queue.Queue()
         self._thread: Optional[threading.Thread] = None
@@ -271,6 +275,50 @@ class SessionManager:
         )
         self._task_queue.put(task)
 
+    def threads_post_now(
+        self,
+        account_id: str,
+        content: str,
+        image_paths: list[str] = None,
+        callback: Callable = None,
+        error_callback: Callable = None,
+    ):
+        """提交 Threads 發文任務"""
+        task = PostTask(
+            account_id=account_id,
+            task_type="threads_post",
+            params={
+                "content": content,
+                "image_paths": image_paths or [],
+            },
+            callback=callback,
+            error_callback=error_callback,
+        )
+        self._task_queue.put(task)
+
+    def threads_reply_now(
+        self,
+        account_id: str,
+        keywords: list[str],
+        max_replies: int = 10,
+        dry_run: bool = False,
+        callback: Callable = None,
+        error_callback: Callable = None,
+    ):
+        """提交 Threads 海巡回覆任務"""
+        task = PostTask(
+            account_id=account_id,
+            task_type="threads_reply",
+            params={
+                "keywords": keywords,
+                "max_replies": max_replies,
+                "dry_run": dry_run,
+            },
+            callback=callback,
+            error_callback=error_callback,
+        )
+        self._task_queue.put(task)
+
     def get_status(self, account_id: str) -> str:
         return self._status.get(account_id, "就緒")
 
@@ -422,6 +470,20 @@ class SessionManager:
                 result = await self._interactor.comment_on_post(page, task.params["post_url"], task.params.get("comment", ""))
             elif task.task_type == "like":
                 result = await self._interactor.like_post(page, task.params["post_url"])
+            elif task.task_type == "threads_post":
+                result = await self._threads_poster.post_thread(
+                    page,
+                    content=task.params["content"],
+                    image_paths=task.params.get("image_paths"),
+                )
+            elif task.task_type == "threads_reply":
+                result = await search_and_reply(
+                    page,
+                    replier=self._threads_replier,
+                    keywords=task.params["keywords"],
+                    max_replies=task.params["max_replies"],
+                    dry_run=task.params["dry_run"],
+                )
 
             # UI 回呼結果
             if task.callback:

@@ -14,6 +14,7 @@ from gui.account_manager import AccountManagerPanel
 from gui.poster_panel import PosterPanel
 from gui.scheduler_panel import SchedulerPanel
 from gui.nurturer_panel import NurturerPanel
+from gui.threads_panel import ThreadsPanel
 from gui.log_panel import LogPanel
 from gui.system_tray import SystemTray, setup_autostart, is_autostart_enabled
 from core.fb_graph_poster import FBPageManager
@@ -143,6 +144,13 @@ class FBPosterApp(ttk.Window):
             self.notebook, account_ids=account_ids, engine=self.session_manager
         )
         self.notebook.add(self.nurturer_panel, text="養號")
+
+        # Threads 分頁
+        self.threads_panel = ThreadsPanel(
+            self.notebook, account_ids=account_ids, account_map=account_map,
+            engine=self.session_manager, scheduler=self.scheduler,
+        )
+        self.notebook.add(self.threads_panel, text="🧵 Threads")
 
         # 日誌分頁
         self.log_panel = LogPanel(self.notebook)
