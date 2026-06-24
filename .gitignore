@@ -85,3 +85,6 @@ fb_auto_poster/data/temp_tiktok/
 fb_auto_poster/data/ig_cookies_*.json
 fb_auto_poster/data/threads_accounts.json
 fb_auto_poster/data/playwright_tmp/
+
+# Warmup state data (per-account)
+fb_auto_poster/data/warmup/

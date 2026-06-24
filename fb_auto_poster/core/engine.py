@@ -37,6 +37,8 @@ from core.threads_poster import ThreadsPoster
 from core.threads_replier import ThreadsReplier, search_and_reply
 from core.instagram_poster import InstagramPoster
 from core.instagram_replier import InstagramReplier, ig_patrol_and_comment
+from core.warmup import get_daily_plan, advance_day, record_session_done, load_warmup_state
+from core.warmup_executor import run_warmup_session
 from utils.logger import log
 
 
@@ -340,6 +342,13 @@ class SessionManager:
             {"keywords": keywords, "max_comments": max_comments, "dry_run": dry_run},
             callback, error_callback))
 
+    def warmup_now(
+        self, account_id: str, callback=None, error_callback=None,
+    ):
+        """提交暖號任務（執行一個時段）"""
+        self._task_queue.put(PostTask(account_id, "warmup",
+            {}, callback, error_callback))
+
     def get_status(self, account_id: str) -> str:
         return self._status.get(account_id, "就緒")
 
@@ -397,6 +406,7 @@ class SessionManager:
         # ── Threads 任務用 IG 帳號 ──
         is_threads = task.task_type.startswith("threads_")
         is_ig = task.task_type.startswith("ig_")
+        is_warmup = task.task_type == "warmup"
 
         if is_threads:
             # 載入 IG cookie
@@ -406,6 +416,12 @@ class SessionManager:
                 self._call_ui(task.error_callback, {"error": "找不到 IG Cookie，請先在 Threads 面板匯入"}) if task.error_callback else None
                 return
         elif is_ig:
+            from gui.threads_panel import load_ig_cookie
+            cookie_json = load_ig_cookie(task.account_id)
+            if not cookie_json:
+                self._call_ui(task.error_callback, {"error": "找不到 IG Cookie"}) if task.error_callback else None
+                return
+        elif is_warmup:
             from gui.threads_panel import load_ig_cookie
             cookie_json = load_ig_cookie(task.account_id)
             if not cookie_json:
@@ -531,6 +547,14 @@ class SessionManager:
                     max_comments=task.params["max_comments"],
                     dry_run=task.params["dry_run"],
                 )
+            elif task.task_type == "warmup":
+                advance_day(task.account_id)
+                plan = get_daily_plan(task.account_id)
+                if plan["should_skip"]:
+                    result = {"status": "skipped", "reason": "休息日或黑夜時段"}
+                else:
+                    result = await run_warmup_session(page, plan)
+                    record_session_done(task.account_id, result)
 
             # UI 回呼結果
             if task.callback:

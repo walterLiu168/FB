@@ -80,6 +80,7 @@ class ThreadsPanel(ttk.Frame):
         self._nb.pack(fill=tk.BOTH, expand=True)
 
         self._build_account_tab()
+        self._build_warmup_tab()
         self._build_post_tab()
         self._build_reply_tab()
 
@@ -231,6 +232,106 @@ class ThreadsPanel(ttk.Frame):
     # ════════════════════════════════════════════
     #  發文頁籤
     # ════════════════════════════════════════════
+
+    def _build_warmup_tab(self):
+        """暖號狀態頁籤"""
+        tab = ttk.Frame(self._nb)
+        self._nb.add(tab, text="🔥 暖號")
+
+        # ── 控制列 ──
+        ctrl = ttk.Frame(tab)
+        ctrl.pack(fill=tk.X, padx=12, pady=(12, 4))
+        create_styled_button(ctrl, "🔄 重新整理", self._refresh_warmup, "secondary").pack(side=tk.LEFT, padx=2)
+        create_styled_button(ctrl, "🔥 立即暖號 (單時段)", self._warmup_one_session, "success").pack(side=tk.LEFT, padx=4)
+        create_styled_button(ctrl, "🗑 重置暖號", self._reset_warmup, "danger").pack(side=tk.RIGHT, padx=2)
+
+        # ── 列表 ──
+        list_frame = ttk.Frame(tab)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=6)
+        columns = ("帳號", "天數", "階段", "進度", "狀態")
+        self._wu_tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=6)
+        for c in columns:
+            self._wu_tree.heading(c, text=c)
+            self._wu_tree.column(c, width=100 if c != "帳號" else 140)
+        wu_scroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self._wu_tree.yview)
+        self._wu_tree.configure(yscrollcommand=wu_scroll.set)
+        self._wu_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        wu_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # ── 說明 ──
+        info = ttk.LabelFrame(tab, text="📖 14 天暖號流程")
+        info.pack(fill=tk.X, padx=12, pady=8)
+        help_text = (
+            "階段 1 (Day 1-3):  只瀏覽不互動 — 建立真人使用模式\n"
+            "階段 2 (Day 4-7):  按讚 + 看 Stories — 輕量互動\n"
+            "階段 3 (Day 8-10): 追蹤少數帳號 + 少量留言 — 中量互動\n"
+            "階段 4 (Day 11-14): 全功能 — 首篇貼文 + 完整互動\n\n"
+            "⚠ 每天分 3-4 時段執行 · 動作量隨機浮動 · 每週休息 2 天 · 凌晨不活動"
+        )
+        ttk.Label(info, text=help_text, justify=tk.LEFT, font=("Microsoft JhengHei", 9)).pack(padx=10, pady=6)
+
+        self._refresh_warmup()
+
+    def _refresh_warmup(self):
+        self._wu_tree.delete(*self._wu_tree.get_children())
+        try:
+            from core.warmup import get_all_warmup_status, get_daily_plan, _is_rest_day, _is_nighttime
+        except Exception:
+            return
+        for acc in self._ig_accounts:
+            try:
+                p = get_daily_plan(acc["account_id"])
+                rest = _is_rest_day(acc["account_id"], __import__("datetime").date.today())
+                night = _is_nighttime()
+                status = "休息日" if rest else ("黑夜" if night else ("進行中" if p["progress_pct"] > 0 else "等待中"))
+                if p["progress_pct"] >= 100:
+                    status = "✅ 完成"
+                tag = "rest" if rest else ("night" if night else "ok")
+                self._wu_tree.insert("", tk.END, values=(
+                    acc.get("username", acc["account_id"][:8]),
+                    f"Day {p['day']}/14",
+                    p["phase_name"],
+                    f"{p['sessions_done']}/{p['total_sessions']}",
+                    status,
+                ), tags=(tag,))
+            except Exception:
+                self._wu_tree.insert("", tk.END, values=(
+                    acc.get("username", "?"), "-", "未開始", "0/0", "需要初始化"
+                ))
+
+    def _warmup_one_session(self):
+        acc = self._get_selected_ig_account()
+        if not acc:
+            messagebox.showwarning("警告", "請先在 IG 帳號頁籤選擇帳號")
+            return
+        if not acc.get("has_cookie"):
+            messagebox.showwarning("警告", "此帳號尚未匯入 Cookie")
+            return
+        if not self.engine:
+            messagebox.showerror("錯誤", "引擎尚未啟動")
+            return
+
+        self.engine.warmup_now(
+            account_id=acc["account_id"],
+            callback=lambda r: self.after(0, self._on_warmup_done, r),
+            error_callback=lambda e: self.after(0, lambda: messagebox.showerror("錯誤", str(e))),
+        )
+        messagebox.showinfo("暖號", "暖號時段已排入，正在背景執行中...")
+
+    def _on_warmup_done(self, result):
+        self._refresh_warmup()
+        btn_text = "✅ 暖號完成"
+        log("WARMUP", "ui", f"Likes: {result.get('likes_done',0)} Follows: {result.get('follows_done',0)}", btn_text)
+
+    def _reset_warmup(self):
+        acc = self._get_selected_ig_account()
+        if not acc:
+            messagebox.showwarning("警告", "請先選擇帳號")
+            return
+        if messagebox.askyesno("確認", "確定要重置暖號進度嗎？會從 Day 1 重新開始。"):
+            from core.warmup import reset_warmup
+            reset_warmup(acc["account_id"])
+            self._refresh_warmup()
 
     def _build_post_tab(self):
         tab = ttk.Frame(self._nb)
