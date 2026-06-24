@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>房仲物件展示</title>
+<style>
+:root {
+  --bg: #1a1a2e;
+  --card: #16213e;
+  --accent: #e94560;
+  --green: #00d26a;
+  --text: #eaeaea;
+  --muted: #a0a0b0;
+  --border: #2a2a4a;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+
+/* ── Hero ── */
+.hero {
+  background: linear-gradient(135deg, #0f3460 0%, #16213e 50%, #1a1a2e 100%);
+  padding: 40px 20px 30px;
+  text-align: center;
+  border-bottom: 2px solid var(--accent);
+}
+.hero .company { color: var(--accent); font-size: 14px; letter-spacing: 2px; text-transform: uppercase; }
+.hero h1 { font-size: 28px; margin: 6px 0 2px; }
+.hero .contact { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.hero .license { font-size: 11px; color: #666; margin-top: 2px; }
+.hero .intro { max-width: 600px; margin: 15px auto 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
+
+/* ── Social Links Bar ── */
+.social-links {
+  display: flex; justify-content: center; gap: 12px;
+  margin: 12px auto 0; flex-wrap: wrap;
+}
+.social-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 20px; font-size: 13px;
+  text-decoration: none; color: #fff; transition: transform 0.15s;
+}
+.social-link:hover { transform: scale(1.05); }
+.social-yt { background: #ff0000; }
+.social-fb { background: #1877f2; }
+.social-tt { background: #000; }
+.social-line { background: var(--green); }
+
+/* ── Intro Video ── */
+.video-section { max-width: 700px; margin: 20px auto 30px; padding: 0 20px; }
+.video-section h3 { color: var(--accent); font-size: 14px; margin-bottom: 8px; text-align: center; }
+.video-wrap { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; }
+.video-wrap iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+
+/* ── LINE Button ── */
+.line-float {
+  position: fixed; bottom: 24px; right: 24px; z-index: 1000;
+  width: 56px; height: 56px; border-radius: 50%;
+  background: var(--green); color: #fff; display: flex;
+  align-items: center; justify-content: center;
+  box-shadow: 0 4px 15px rgba(0,210,106,0.4);
+  cursor: pointer; transition: transform 0.2s; text-decoration: none;
+  font-size: 28px; font-weight: bold;
+}
+.line-float:hover { transform: scale(1.1); }
+
+/* ── Container ── */
+.container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+
+/* ── Filters ── */
+.filters {
+  display: flex; flex-wrap: wrap; gap: 10px;
+  align-items: center; margin-bottom: 20px;
+}
+.filter-tabs { display: flex; gap: 4px; }
+.filter-tab {
+  padding: 8px 18px; border-radius: 20px; border: 1px solid var(--border);
+  background: transparent; color: var(--muted); cursor: pointer;
+  font-size: 13px; transition: all 0.2s;
+}
+.filter-tab:hover { border-color: var(--accent); color: var(--text); }
+.filter-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.search-box {
+  margin-left: auto; padding: 8px 14px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--card); color: var(--text);
+  font-size: 13px; width: 200px; outline: none;
+}
+.search-box:focus { border-color: var(--accent); }
+.count { color: var(--muted); font-size: 12px; margin-left: 8px; }
+
+/* ── Card Grid ── */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.card {
+  background: var(--card); border-radius: 12px; overflow: hidden;
+  cursor: pointer; transition: transform 0.15s, box-shadow 0.15s;
+  border: 1px solid transparent;
+}
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(233,69,96,0.15);
+  border-color: var(--accent);
+}
+.card-img {
+  width: 100%; height: 180px; object-fit: cover;
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 42px;
+}
+.card-body { padding: 14px 16px; }
+.card-type {
+  display: inline-block; padding: 2px 10px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; margin-bottom: 6px;
+}
+.type-house { background: #e9456022; color: #e94560; }
+.type-land  { background: #f0a50022; color: #f0a500; }
+.type-factory { background: #6c5ce722; color: #6c5ce7; }
+.card-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.card-price { color: var(--accent); font-size: 18px; font-weight: 700; }
+.card-meta { color: var(--muted); font-size: 12px; margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap; }
+.card-date { font-size: 11px; color: #555; margin-top: 6px; }
+
+/* ── Empty State ── */
+.empty {
+  text-align: center; padding: 60px 20px; color: var(--muted);
+}
+.empty .icon { font-size: 48px; margin-bottom: 12px; }
+
+/* ── Modal ── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; z-index: 2000;
+  background: rgba(0,0,0,0.7); align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--card); border-radius: 16px; max-width: 600px;
+  width: 90%; max-height: 85vh; overflow-y: auto; padding: 24px;
+  position: relative;
+}
+.modal-close {
+  position: absolute; top: 12px; right: 16px;
+  background: none; border: none; color: var(--muted); font-size: 22px;
+  cursor: pointer;
+}
+.modal-img {
+  width: 100%; height: 260px; object-fit: cover; border-radius: 10px;
+  margin-bottom: 16px; background: #1a1a2e;
+}
+.modal h2 { font-size: 20px; margin-bottom: 4px; }
+.modal .price { color: var(--accent); font-size: 22px; font-weight: 700; margin-bottom: 12px; }
+.modal .detail-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px;
+  margin-bottom: 14px; font-size: 14px;
+}
+.modal .detail-item { display: flex; gap: 6px; }
+.modal .detail-label { color: var(--muted); }
+.modal .intro-text { color: var(--text); font-size: 14px; line-height: 1.7; padding-top: 10px; border-top: 1px solid var(--border); }
+.modal .line-btn {
+  display: inline-block; margin-top: 16px; padding: 10px 24px;
+  background: var(--green); color: #fff; border-radius: 24px;
+  text-decoration: none; font-weight: 600; font-size: 14px;
+}
+.modal .line-btn:hover { opacity: 0.9; }
+
+/* ── Footer ── */
+.footer { text-align: center; padding: 30px; color: #444; font-size: 12px; border-top: 1px solid var(--border); margin-top: 30px; }
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .card-grid { grid-template-columns: 1fr; }
+  .hero h1 { font-size: 22px; }
+  .filters { flex-direction: column; align-items: flex-start; }
+  .search-box { margin-left: 0; width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── Hero / Agent Profile ── -->
+<header class="hero" id="hero-section">
+  <div class="company"></div>
+  <h1></h1>
+  <div class="contact"></div>
+  <div class="license"></div>
+  <div class="intro"></div>
+  <div class="social-links" id="social-links"></div>
+</header>
+
+<!-- ── Intro Video ── -->
+<div class="video-section" id="video-section" style="display:none">
+  <h3>🎬 自我介紹影片</h3>
+  <div class="video-wrap" id="video-wrap"></div>
+</div>
+
+<!-- ── LINE Float ── -->
+<a class="line-float" id="line-float" href="#" target="_blank" title="LINE 聯繫">📱</a>
+
+<div class="container">
+
+  <!-- ── Filters ── -->
+  <div class="filters">
+    <div class="filter-tabs">
+      <button class="filter-tab active" data-type="">🏠 全部</button>
+      <button class="filter-tab" data-type="house">🏠 房屋</button>
+      <button class="filter-tab" data-type="land">🌍 土地</button>
+      <button class="filter-tab" data-type="factory">🏭 廠房</button>
+    </div>
+    <input class="search-box" type="text" placeholder="🔍 搜尋標題 / 地點..." id="search-input">
+    <span class="count" id="result-count"></span>
+  </div>
+
+  <!-- ── Card Grid ── -->
+  <div class="card-grid" id="card-grid"></div>
+  <div class="empty" id="empty-state" style="display:none">
+    <div class="icon">🏠</div>
+    <p>暫無物件，敬請期待</p>
+  </div>
+
+</div>
+
+<!-- ── Detail Modal ── -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" id="modal">
+    <button class="modal-close" id="modal-close">✕</button>
+    <img class="modal-img" id="modal-img" src="" alt="">
+    <h2 id="modal-title"></h2>
+    <div class="price" id="modal-price"></div>
+    <div class="detail-grid" id="modal-details"></div>
+    <div class="intro-text" id="modal-intro"></div>
+    <a class="line-btn" id="modal-line" href="#" target="_blank">📱 LINE 立即洽詢</a>
+  </div>
+</div>
+
+<footer class="footer" id="footer-section"></footer>
+
+<script>
+// ── Globals ──
+let agent = {};
+let listings = [];
+
+// ── Fetch Data ──
+async function loadData() {
+  try {
+    const [aRes, lRes] = await Promise.all([
+      fetch('data/agent.json'),
+      fetch('data/listings.json')
+    ]);
+    agent = await aRes.json();
+    listings = await lRes.json();
+    renderAgent();
+    renderListings();
+  } catch(e) {
+    console.error('Data load error:', e);
+  }
+}
+
+// ── Render Agent Profile ──
+function renderAgent() {
+  document.querySelector('#hero-section .company').textContent = agent.company || '';
+  document.querySelector('#hero-section h1').textContent = agent.name ? `🏠 ${agent.name}` : '房仲物件展示';
+  document.querySelector('#hero-section .contact').textContent = agent.phone ? `📞 ${agent.phone}` : '';
+  document.querySelector('#hero-section .license').textContent = agent.license || '';
+  document.querySelector('#hero-section .intro').textContent = agent.intro || '';
+
+  // LINE 按鈕
+  if (agent.line_id) {
+    const lineUrl = `https://line.me/R/ti/p/${agent.line_id}`;
+    document.getElementById('line-float').href = lineUrl;
+    document.getElementById('modal-line').href = lineUrl;
+  }
+
+  // 社群連結
+  const socialLinks = document.getElementById('social-links');
+  const links = [];
+  const socialDefs = [
+    { key: 'youtube',   icon: '▶️', label: 'YouTube', cls: 'social-yt' },
+    { key: 'facebook',  icon: '📘', label: 'Facebook', cls: 'social-fb' },
+    { key: 'tiktok',    icon: '🎵', label: 'TikTok', cls: 'social-tt' },
+    { key: 'line_url',  icon: '💬', label: 'LINE', cls: 'social-line' },
+  ];
+  for (const s of socialDefs) {
+    if (agent[s.key]) {
+      links.push(`<a class="social-link ${s.cls}" href="${agent[s.key]}" target="_blank">${s.icon} ${s.label}</a>`);
+    }
+  }
+  socialLinks.innerHTML = links.join('');
+
+  // 介紹影片
+  if (agent.intro_video) {
+    const vid = document.getElementById('video-section');
+    vid.style.display = 'block';
+    document.getElementById('video-wrap').innerHTML =
+      `<iframe src="https://www.youtube.com/embed/${agent.intro_video}" allowfullscreen></iframe>`;
+  }
+
+  document.getElementById('footer-section').innerHTML =
+    `© ${new Date().getFullYear()} ${agent.company || ''} ${agent.name || ''} &mdash; ${agent.phone || ''}`;
+}
+
+// ── Get listing type ──
+function getListingType(l) {
+  const t = (l.template || '').toLowerCase();
+  const title = (l.title || '').toLowerCase();
+  if (t.includes('土地') || t.includes('land')) return 'land';
+  if (t.includes('厂房') || t.includes('廠房') || t.includes('factory')) return 'factory';
+  if (title.includes('土地') || title.includes('農地') || title.includes('建地')) return 'land';
+  if (title.includes('廠房') || title.includes('工廠')) return 'factory';
+  return 'house';
+}
+
+function typeLabel(t) {
+  return {house:'🏠 房屋', land:'🌍 土地', factory:'🏭 廠房'}[t] || '房屋';
+}
+function typeClass(t) {
+  return {house:'type-house', land:'type-land', factory:'type-factory'}[t] || 'type-house';
+}
+
+// ── Render Cards ──
+function renderListings() {
+  const grid = document.getElementById('card-grid');
+  const empty = document.getElementById('empty-state');
+  const count = document.getElementById('result-count');
+  const searchText = document.getElementById('search-input').value.toLowerCase();
+  const activeFilter = document.querySelector('.filter-tab.active')?.dataset.type || '';
+
+  let filtered = listings;
+  if (activeFilter) {
+    filtered = filtered.filter(l => getListingType(l) === activeFilter);
+  }
+  if (searchText) {
+    filtered = filtered.filter(l =>
+      (l.title || '').toLowerCase().includes(searchText) ||
+      (l.location || '').toLowerCase().includes(searchText) ||
+      (l.intro || '').toLowerCase().includes(searchText)
+    );
+  }
+
+  count.textContent = `${filtered.length} 筆`;
+
+  if (filtered.length === 0) {
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+
+  empty.style.display = 'none';
+  grid.innerHTML = filtered.map((l, i) => {
+    const t = getListingType(l);
+    const img = l.image ? `images/${l.image}` : '';
+    const imgHtml = img ? `<img class="card-img" src="${img}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">` : '';
+    const iconHtml = !img ? `<div class="card-img">${typeLabel(t).charAt(0)}</div>` : '';
+
+    // Date formatting
+    let dateStr = '';
+    if (l.date) {
+      const d = new Date(l.date);
+      if (!isNaN(d.getTime())) {
+        dateStr = d.toLocaleDateString('zh-TW', {year:'numeric', month:'2-digit', day:'2-digit'});
+      } else {
+        dateStr = l.date;
+      }
+    }
+
+    const meta = [];
+    if (l.size) meta.push(`📐 ${l.size}`);
+    if (l.rooms) meta.push(`🛏️ ${l.rooms}`);
+    if (l.floor) meta.push(`🏢 ${l.floor}`);
+    if (l.age) meta.push(`📅 ${l.age}`);
+
+    return `
+      <div class="card" onclick="openModal(${i})">
+        ${imgHtml}${iconHtml}
+        <div class="card-body">
+          <span class="card-type ${typeClass(t)}">${typeLabel(t)}</span>
+          <div class="card-title">${esc(l.title || '精選好屋')}</div>
+          <div class="card-price">${esc(l.price || '歡迎洽詢')}</div>
+          ${meta.length ? `<div class="card-meta">${meta.join(' &nbsp;')}</div>` : ''}
+          <div class="card-date">${esc(l.location || '')}${dateStr ? ' &middot; ' + dateStr : ''}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function esc(str) {
+  const d = document.createElement('div');
+  d.textContent = str || '';
+  return d.innerHTML;
+}
+
+// ── Modal ──
+function openModal(idx) {
+  const l = listings[idx];
+  if (!l) return;
+
+  const t = getListingType(l);
+  document.getElementById('modal-img').src = l.image ? `images/${l.image}` : '';
+  document.getElementById('modal-img').style.display = l.image ? 'block' : 'none';
+  document.getElementById('modal-title').textContent = l.title || '精選好屋';
+  document.getElementById('modal-price').textContent = l.price || '歡迎洽詢';
+
+  const details = [];
+  if (l.size) details.push({ label: '📐 坪數', value: l.size });
+  if (l.rooms) details.push({ label: '🛏️ 格局', value: l.rooms });
+  if (l.type) details.push({ label: '🏗️ 類型', value: l.type });
+  if (l.floor) details.push({ label: '🏢 樓層', value: l.floor });
+  if (l.age) details.push({ label: '📅 屋齡', value: l.age });
+  if (l.parking) details.push({ label: '🚗 車位', value: l.parking });
+  if (l.orientation) details.push({ label: '🧭 朝向', value: l.orientation });
+  if (l.road_width) details.push({ label: '🛣️ 路寬', value: l.road_width });
+  if (l.land_size) details.push({ label: '🌍 土地坪數', value: l.land_size });
+  if (l.location) details.push({ label: '📍 地點', value: l.location });
+
+  document.getElementById('modal-details').innerHTML = details.map(d =>
+    `<div class="detail-item"><span class="detail-label">${d.label}</span><span>${esc(d.value)}</span></div>`
+  ).join('');
+
+  document.getElementById('modal-intro').textContent = l.intro || '歡迎預約賞屋，私訊或來電立即安排！';
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+// ── Event Listeners ──
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+});
+
+document.querySelectorAll('.filter-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    renderListings();
+  });
+});
+
+document.getElementById('search-input').addEventListener('input', renderListings);
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+// ── Init ──
+loadData();
+</script>
+
+</body>
+</html>

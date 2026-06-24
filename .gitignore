@@ -1,0 +1,82 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project data (keep structure, ignore sensitive)
+fb_auto_poster/data/*.log
+fb_auto_poster/data/*.lic
+fb_auto_poster/data/temp_images/
+fb_auto_poster/data/browser_profiles/
+fb_auto_poster/data/debug_screenshots/
+fb_auto_poster/data/tiktok_profile/
+fb_auto_poster/data/pending_posts/
+fb_auto_poster/data/pending_deletes.json
+fb_auto_poster/data/operations.log
+
+# But keep directory structure
+!fb_auto_poster/data/.gitkeep
+
+# Environment
+.env
+!.env.template
+
+# Vercel
+.vercel/
+
+# Node (if used)
+node_modules/
+
+# Playwright
+.playwright/
+
+# Reverse-engineered builds (exclude entirely)
+TEST/
+TEST2/
+
+# LLM guardrail logs
+.llm-guardrail/
+
+# Sensitive runtime data
+fb_auto_poster/data/.secret_key
+fb_auto_poster/data/cookies_*.json
+fb_auto_poster/data/*.db
+fb_auto_poster/data/accounts.json
+fb_auto_poster/data/auto_comments.json
+fb_auto_poster/data/available_groups.json
+fb_auto_poster/data/bulk_queue.json
+fb_auto_poster/data/calendar.json
+fb_auto_poster/data/drafts.json
+fb_auto_poster/data/engagement_tracker.json
+fb_auto_poster/data/fb_pages.json
+fb_auto_poster/data/global_settings.json
+fb_auto_poster/data/group_activity.json
+fb_auto_poster/data/group_post_sets.json
+fb_auto_poster/data/joined_groups.json
+fb_auto_poster/data/pending_schedule.json
+fb_auto_poster/data/pro_templates.json
+fb_auto_poster/data/saved_groups.json
+fb_auto_poster/data/schedules.json
+fb_auto_poster/data/templates.json
+fb_auto_poster/data/tiktok_accounts.json
+fb_auto_poster/data/temp_tiktok/
