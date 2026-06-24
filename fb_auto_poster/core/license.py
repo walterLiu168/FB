@@ -51,6 +51,7 @@ _REG_KEY = r"Software\FBPoster"
 _REG_INSTALL_ID = "InstallId"
 _REG_LAST_RENEWAL_KEY = "LastRenewalKey"
 _REG_ACTIVATED_MAC = "ActivatedMac"
+_REG_LICENSE_HASH = "LicenseHash"
 
 # ── 授權有效天數與寬限期 ──
 _LICENSE_DAYS = 30          # 每期有效天數
@@ -341,10 +342,16 @@ def verify_license(lic_path: Optional[str] = None) -> dict:
         )
         return result
 
-    # ── 第 6 層: 檢查 Renewal Key 是否被重複使用 ──
+    # ── 第 6 層: 檢查 Renewal Key 是否已被其他檔案使用 ──
+    # 只有當 registry 中存的 renewal_key 與檔案中的不同時才擋
+    # （使用者用舊檔頂替新檔時會觸發；同一檔案重複驗證則放行）
     last_renewal = get_last_renewal_key()
-    if last_renewal and last_renewal == renewal_key:
-        result["reason"] = "此授權金鑰已被使用過，請取得新的月租授權"
+    _lic_hash = hashlib.sha256(json.dumps(lic_data, sort_keys=True).encode()).hexdigest()
+    _stored_hash = _read_registry("LicenseHash")
+
+    if last_renewal and last_renewal != renewal_key and _stored_hash and _stored_hash != _lic_hash:
+        # 不同的檔案 → 可能是用舊授權頂替
+        result["reason"] = "偵測到授權檔案已被更換，請使用管理員提供的最新授權"
         return result
 
     # ── 第 7 層: 檢查到期日 ──
@@ -378,10 +385,11 @@ def verify_license(lic_path: Optional[str] = None) -> dict:
         )
 
     # ── 全部通過 ──
-    # 記下這次的 renewal_key 到 registry，防止重複使用
+    # 記下授權資訊到 registry（同一檔案重複驗證時不會阻擋）
     if _sys.platform == "win32":
         _write_registry(_REG_LAST_RENEWAL_KEY, renewal_key)
         _write_registry(_REG_ACTIVATED_MAC, current_mac)
+        _write_registry(_REG_LICENSE_HASH, _lic_hash)
 
     result["valid"] = True
     result["reason"] = "授權有效"
