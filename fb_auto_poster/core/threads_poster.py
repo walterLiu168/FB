@@ -1,18 +1,15 @@
 """Threads.net 自動發文引擎 — 使用 Playwright 瀏覽器自動化
 
-Threads.net 由 Meta 開發，類似 Twitter/X 的短文社群平台。
-此模組提供：
-  - 自動登入（透過 Instagram cookie / 手動登入）
-  - 發文（純文字 / 文字+圖片）
-  - 自動隨機 Hashtag
-  - 發文間隔控制（防 ban）
+Threads.net 由 Meta 開發。發文流程：
+  1. 留在首頁（cookie 已由 browser.py 注入，頁面會自動登入）
+  2. 點擊首頁頂部的「Start a thread...」文字區塊 → 打開內嵌編輯器
+  3. 在編輯器中輸入文字 → 按 Post
+  4. 發文後回到首頁，可立刻看到剛發的文
 
-工作流程：
-  1. 開啟 threads.net
-  2. 確認登入狀態
-  3. 點擊「新串文」按鈕
-  4. 輸入文字 + 上傳圖片
-  5. 點擊發布
+設計重點：
+  - 不跳轉到 /compose/post（可能 404），全程在首頁完成
+  - 用 force click 避開 visibility 檢查（Threads 用大量 absolute positioning）
+  - 多層選擇器 fallback，對應不同 UI 版本
 """
 import os
 import asyncio
@@ -23,294 +20,172 @@ from playwright.async_api import Page
 
 from utils.logger import log
 
-# ── 工具函數 ──
+_LAUNCH_ARGS = ["--disable-blink-features=AutomationControlled"]
+
+# ── helpers ──
 async def _s(lo=0.5, hi=1.5):
     await asyncio.sleep(random.uniform(lo, hi))
 
-
-async def _dl(lo=30, hi=120):
-    """發文間隔：30 秒 ~ 2 分鐘（Threads 較寬鬆）"""
-    await asyncio.sleep(random.uniform(lo, hi))
-
-
-def _random_hashtag() -> str:
-    """產生隨機輔助文字（增加自然感）"""
-    words = [
-        "\n\n#每日分享", "\n\n#生活紀錄", "\n\n#心得", "\n\n#推薦",
-        "\n\n#實用技巧", "\n\n#日常", "\n\n#好物分享", "\n\n#討論",
-        "\n.\n.", " ", "",
-    ]
-    return random.choice(words)
+def _random_tail() -> str:
+    return random.choice([
+        "\n\n#每日分享", "\n\n#心得", "\n\n#推薦",
+        "\n\n#日常", "\n\n#好物分享", "\n.\n.", " ", "",
+    ])
 
 
 class ThreadsPoster:
-    """Threads.net 發文引擎"""
+    """Threads.net 發文引擎 — 首頁內嵌編輯器版本"""
 
     def __init__(self):
-        self._screenshot_dir = os.path.join(
+        self._ss = os.path.join(
             os.path.dirname(os.path.dirname(__file__)), "data", "debug_screenshots"
         )
 
-    async def _screenshot(self, page: Page, step: str):
-        """除錯截圖"""
+    async def _sshot(self, page: Page, step: str):
         try:
-            os.makedirs(self._screenshot_dir, exist_ok=True)
+            os.makedirs(self._ss, exist_ok=True)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            path = os.path.join(self._screenshot_dir, f"threads_{ts}_{step}.png")
+            path = os.path.join(self._ss, f"threads_{ts}_{step}.png")
             await page.screenshot(path=path, full_page=False)
         except Exception:
             pass
 
-    async def _ensure_logged_in(self, page: Page) -> bool:
-        """確認已登入 Threads（透過 Instagram 帳號）
+    # ═══════════════════════════════
+    #  登入檢查（輕量 — cookie 已注入）
+    # ═══════════════════════════════
 
-        Threads 使用 Instagram 帳號登入。
-        優先檢查頁面上是否有已登入的跡象。
-        """
-        await page.goto("https://www.threads.net/", wait_until="domcontentloaded", timeout=30000)
-        await _s(3, 5)
-
-        # 檢查是否已登入 — 找頭像、發文框等跡象
-        logged_in_indicators = [
-            'a[href="/@"]',                # 自己的 profile link
-            'svg[aria-label="Threads"]',   # Threads logo（登入後才會有完整 UI）
-            'div[role="button"]:has-text("Start a thread")',
-            'div:has-text("Start a thread")',
-            '[aria-label="Home"]',          # 導覽列
+    async def _is_logged_in(self, page: Page) -> bool:
+        """快速檢查登入狀態"""
+        for sel in [
+            'a[href*="/@"]',
+            'svg[aria-label="Home"]',
             'a[href*="/notifications"]',
-        ]
-
-        for sel in logged_in_indicators:
+        ]:
             try:
-                el = page.locator(sel).first
-                if await el.count() > 0 and await el.is_visible(timeout=1000):
+                if await page.locator(sel).first.count() > 0:
                     return True
             except Exception:
                 continue
 
-        # 檢查是否在登入頁面
+        # 有 login 按鈕 = 未登入
         try:
-            login_indicators = page.locator('text="Log in"').first
-            if await login_indicators.count() > 0:
-                # 在登入頁面 — 嘗試自動登入
-                log("THREADS", "auth", "偵測到登入頁面，嘗試登入...", "🔑")
-                logged = await self._try_login(page)
-                return logged
+            if await page.locator('text="Log in"').first.count() > 0:
+                return False
         except Exception:
             pass
 
-        # 不確定狀態，假設已登入（cookie 可能已過期但頁面仍在載入中）
-        return True
+        return True  # 不確定 → 假設 OK
 
-    async def _try_login(self, page: Page) -> bool:
-        """嘗試登入 Threads
+    # ═══════════════════════════════
+    #  發文核心
+    # ═══════════════════════════════
 
-        Threads 使用 Instagram 登入，所以需要 Instagram cookie。
+    async def _open_composer(self, page: Page) -> bool:
+        """在首頁上打開 Threads 內嵌編輯器
+
+        Threads 首頁頂部有個 「Start a thread...」區域，點擊會原地展開編輯器。
         """
-        try:
-            # 找 "Use Instagram" / "Continue with Instagram" 按鈕
-            login_selectors = [
-                'text="Use Instagram"',
-                'text="Continue with Instagram"',
-                'text="Log in with Instagram"',
-                'a:has-text("Log in")',
-            ]
-
-            for sel in login_selectors:
-                try:
-                    btn = page.locator(sel).first
-                    if await btn.is_visible(timeout=2000):
-                        await btn.click(timeout=3000)
-                        await _s(3, 5)
-                        break
-                except Exception:
-                    continue
-
-            # 檢查是否成功登入
-            await _s(2, 4)
-            return await self._ensure_logged_in(page)
-
-        except Exception as e:
-            log("THREADS", "auth", f"登入失敗: {e}", "❌")
-            return False
-
-    async def _click_new_thread_button(self, page: Page) -> bool:
-        """點擊發文按鈕
-
-        Threads 有多個發文入口：
-          - 底部導覽列的「+」按鈕
-          - 主頁面上的 "Start a thread" / "What's new" 區塊
-        """
-        # 優先點擊底部導覽列的 + 發文按鈕
-        selectors = [
-            'a[href="/compose/post"]',
+        composer_triggers = [
             'div[role="button"]:has-text("Start a thread")',
             'div:has-text("Start a thread")',
-            'div[aria-label="Start a thread"]',
-            'svg[aria-label="New thread"]',
-            # 底部導覽列 post 按鈕
-            'a[href="/"] svg[aria-label="Post"]',
-            # 手機版 UI
-            '[data-testid="create-post-button"]',
+            'span:has-text("Start a thread")',
+            'textarea[placeholder*="Start a thread"]',
+            'div[data-testid="composer-trigger"]',
+            # fallback: any clickable area inside the top bar
+            'div[role="button"]:has(svg)',
         ]
 
-        for sel in selectors:
+        for sel in composer_triggers:
+            try:
+                el = page.locator(sel).first
+                if await el.count() > 0:
+                    await el.click(force=True, timeout=5000)
+                    await _s(1.5, 3)
+                    # 檢查編輯器是否真的打開了
+                    if await self._is_composer_open(page):
+                        return True
+            except Exception:
+                continue
+
+        return False
+
+    async def _is_composer_open(self, page: Page) -> bool:
+        """編輯器打開後應該看到一個可輸入的區域和 Post 按鈕"""
+        for sel in [
+            'div[role="button"]:has-text("Post")',
+            'span:has-text("Post")',
+            'textarea',
+            '[contenteditable="true"]',
+        ]:
+            try:
+                if await page.locator(sel).first.count() > 0:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _type_text(self, page: Page, text: str) -> bool:
+        """在編輯器中輸入文字"""
+        await _s(0.5, 1)
+
+        # 優先：找 textarea
+        for sel in [
+            'textarea',
+            'textarea[placeholder]',
+            '[contenteditable="true"]',
+            'div[role="textbox"]',
+        ]:
             try:
                 el = page.locator(sel).first
                 if await el.count() > 0:
                     await el.click(force=True, timeout=3000)
-                    await _s(1, 2)
+                    await _s(0.3, 0.6)
+                    await el.fill(text)
+                    await _s(0.5, 1)
                     return True
             except Exception:
                 continue
 
-        return False
-
-    async def _fill_thread_text(self, page: Page, text: str) -> bool:
-        """在 Threads 編輯器中填入文字
-
-        Threads 使用 contenteditable div 或 textarea。
-        """
-        await _s(1, 2)
-
-        # 方法 1: 找 textarea
-        try:
-            ta = page.locator('textarea').first
-            if await ta.count() > 0 and await ta.is_visible(timeout=1000):
-                await ta.click(timeout=2000)
-                await _s(0.3, 0.8)
-                await ta.fill(text)
-                return True
-        except Exception:
-            pass
-
-        # 方法 2: contenteditable div
-        try:
-            editors = page.locator('[contenteditable="true"]').all()
-            for ed in editors:
-                if await ed.is_visible(timeout=1000):
-                    await ed.click(force=True, timeout=2000)
-                    await _s(0.3, 0.8)
-                    await ed.fill(text)
-                    return True
-        except Exception:
-            pass
-
-        # 方法 3: 直接用鍵盤輸入
+        # 最後手段：tab + 鍵盤輸入
         try:
             await page.keyboard.press("Tab")
-            await _s(0.2, 0.5)
-            await page.keyboard.type(text, delay=random.randint(30, 80))
+            await _s(0.2, 0.4)
+            for ch in text:
+                await page.keyboard.type(ch, delay=random.randint(15, 40))
             return True
         except Exception:
             pass
 
         return False
 
-    async def _upload_images(self, page: Page, image_paths: list[str]) -> bool:
-        """上傳圖片到 Threads 貼文"""
-        if not image_paths:
-            return True
-
-        log("THREADS", "post", f"上傳 {len(image_paths)} 張圖片...", "📷")
-
-        # 找附件/圖片按鈕
-        attachment_selectors = [
-            'svg[aria-label="Attach"]',
-            'svg[aria-label="Media"]',
-            'input[type="file"]',
-            'div[role="button"]:has(svg[aria-label="Attach"])',
-            '[data-testid="attach-button"]',
-        ]
-
-        for sel in attachment_selectors:
-            try:
-                btn = page.locator(sel).first
-                if await btn.is_visible(timeout=1000):
-                    # 嘗試 file chooser 攔截
-                    try:
-                        async with page.expect_file_chooser(timeout=5000) as fc:
-                            await btn.click(force=True, timeout=3000)
-                        file_chooser = await fc.value
-                        await file_chooser.set_files(image_paths)
-                        await _s(2, 4)
-                        log("THREADS", "post", f"✅ 圖片上傳成功 ({len(image_paths)} 張)", "📷")
-                        return True
-                    except Exception:
-                        pass
-            except Exception:
-                continue
-
-        # 直接找 file input
-        try:
-            fi = page.locator('input[type="file"]').first
-            if await fi.count() > 0:
-                await fi.set_input_files(image_paths)
-                await _s(2, 4)
-                return True
-        except Exception:
-            pass
-
-        log("THREADS", "post", "⚠️ 圖片上傳失敗", "⚠️")
-        return False
-
-    async def _click_post_button(self, page: Page) -> bool:
-        """點擊發布按鈕"""
-        post_selectors = [
+    async def _click_post(self, page: Page) -> bool:
+        """點擊 Post 按鈕"""
+        for sel in [
             'div[role="button"]:has-text("Post")',
-            'div:has-text("Post"):not(:has-text("Start"))',
-            'button:has-text("Post")',
-            '[data-testid="post-button"]',
-            'div[role="button"]:has-text("發布")',
-        ]
-
-        for sel in post_selectors:
+            'span:has-text("Post")',
+        ]:
             try:
-                btn = page.locator(sel).last  # 用 last 避免點到其他 Post 文字
-                if await btn.is_visible(timeout=1000):
-                    await btn.click(force=True, timeout=3000)
-                    await _s(3, 5)
+                btn = page.locator(sel).last
+                if await btn.count() > 0:
+                    await btn.click(force=True, timeout=5000)
+                    await _s(2, 5)
                     return True
             except Exception:
                 continue
 
-        # 試鍵盤快捷鍵 Ctrl+Enter (Threads 快捷鍵)
+        # Ctrl+Enter shortcut
         try:
             await page.keyboard.press("Control+Enter")
-            await _s(3, 5)
+            await _s(2, 5)
             return True
         except Exception:
             pass
 
         return False
 
-    async def _try_get_thread_url(self, page: Page) -> str:
-        """嘗試取得剛發出的串文 URL"""
-        try:
-            # Threads URL 格式: threads.net/@username/post/XXXXX
-            # 發文後通常會跳轉到個人頁面或回首頁
-            current_url = page.url
-            if "/post/" in current_url:
-                return current_url.split("?")[0]
-
-            # 嘗試找自己的最新貼文連結
-            selectors = [
-                'a[href*="/post/"]',
-                'a[href*="/t/"]',
-            ]
-            for sel in selectors:
-                links = page.locator(sel).all()
-                for link in links:
-                    href = await link.get_attribute("href") or ""
-                    if "/post/" in href:
-                        return f"https://www.threads.net{href.split('?')[0]}"
-        except Exception:
-            pass
-        return ""
-
-    # ════════════════════════════════════════════
+    # ═══════════════════════════════
     #  公開 API
-    # ════════════════════════════════════════════
+    # ═══════════════════════════════
 
     async def post_thread(
         self,
@@ -318,89 +193,109 @@ class ThreadsPoster:
         content: str,
         image_paths: Optional[list[str]] = None,
     ) -> dict:
-        """發布一篇 Threads 貼文
+        """發布一篇 Threads 貼文（純文字）
 
         Args:
-            page: Playwright Page（已載入 cookie）
+            page: 已載入 Threads cookie 的 Playwright Page
             content: 貼文內容
-            image_paths: 圖片路徑列表（可選）
+            image_paths: 圖片（暫不支援，Threads 圖片上傳 UI 極不穩定）
 
         Returns:
             {"success": bool, "post_url": str, "error": str|None}
         """
-        if not content.strip():
+        content = content.strip()
+        if not content:
             return {"success": False, "error": "文案不能為空", "post_url": ""}
 
         try:
-            # 1. 確認登入
-            logged_in = await self._ensure_logged_in(page)
-            if not logged_in:
-                await self._screenshot(page, "not_logged_in")
-                return {"success": False, "error": "未登入 Threads，請先在瀏覽器中登入", "post_url": ""}
+            # 1. 確保在首頁且已登入
+            await page.goto("https://www.threads.net/",
+                           wait_until="domcontentloaded", timeout=30000)
+            await _s(2, 4)
+            await self._sshot(page, "home")
 
-            # 2. 點擊發文按鈕
-            clicked = await self._click_new_thread_button(page)
-            if not clicked:
-                # 試試直接導航到 compose URL
-                await page.goto("https://www.threads.net/compose/post", wait_until="domcontentloaded", timeout=15000)
-                await _s(2, 4)
+            if not await self._is_logged_in(page):
+                await self._sshot(page, "login_page")
+                return {"success": False, "error": "未登入 — cookie 可能已過期", "post_url": ""}
 
-            # 3. 填入文字
-            text = content + _random_hashtag()
-            filled = await self._fill_thread_text(page, text)
-            if not filled:
-                await self._screenshot(page, "no_editor")
-                return {"success": False, "error": "找不到文字編輯器", "post_url": ""}
+            log("THREADS", "post", "已登入，準備發文...", "🔑")
 
-            # 4. 上傳圖片（如果有）
+            # 2. 打開內嵌編輯器
+            if not await self._open_composer(page):
+                await self._sshot(page, "no_composer")
+                return {"success": False, "error": "找不到發文按鈕（Start a thread）", "post_url": ""}
+
+            await self._sshot(page, "composer_open")
+            log("THREADS", "post", "編輯器已開啟", "✏️")
+
+            # 3. 輸入文字
+            text = content + _random_tail()
+            if not await self._type_text(page, text):
+                await self._sshot(page, "no_textbox")
+                return {"success": False, "error": "找不到文字輸入框", "post_url": ""}
+
+            log("THREADS", "post", f"文字已填入 ({len(text)} 字)", "📝")
+
+            # 4. （可選）圖片
             if image_paths:
                 await self._upload_images(page, image_paths)
-                await _s(1, 2)
 
-            # 5. 點擊發布
-            published = await self._click_post_button(page)
-            if not published:
-                await self._screenshot(page, "no_post_btn")
-                return {"success": False, "error": "找不到發布按鈕", "post_url": ""}
+            # 5. 點擊 Post
+            if not await self._click_post(page):
+                await self._sshot(page, "no_post_btn")
+                return {"success": False, "error": "找不到 Post 按鈕", "post_url": ""}
 
-            # 6. 取得貼文 URL
-            post_url = await self._try_get_thread_url(page)
+            await self._sshot(page, "posted")
 
-            log("THREADS", "post", f"✅ 發文成功" + (f" | {post_url}" if post_url else ""), "✅")
+            # 6. 取 URL
+            post_url = page.url
+            if "/post/" not in post_url:
+                # 找最新貼文連結
+                try:
+                    links = page.locator('a[href*="/post/"]').all()
+                    for lk in links:
+                        h = await lk.get_attribute("href") or ""
+                        if "/post/" in h:
+                            post_url = f"https://www.threads.net{h.split('?')[0]}"
+                            break
+                except Exception:
+                    pass
+
+            log("THREADS", "post", "✅ 發文成功", "✅")
             return {"success": True, "post_url": post_url, "error": None}
 
         except Exception as e:
-            await self._screenshot(page, "error")
+            await self._sshot(page, "crash")
             return {"success": False, "error": str(e)[:200], "post_url": ""}
 
+    # ── 圖片上傳（保留但標記為不穩定） ──
+
+    async def _upload_images(self, page: Page, paths: list[str]) -> bool:
+        if not paths:
+            return True
+        log("THREADS", "post", f"上傳 {len(paths)} 張圖片...", "📷")
+        try:
+            fi = page.locator('input[type="file"]').first
+            if await fi.count() > 0:
+                await fi.set_input_files(paths, timeout=10000)
+                await _s(2, 4)
+                return True
+        except Exception:
+            pass
+        return False
+
+    # ── 批次 ──
+
     async def post_multiple(
-        self,
-        page: Page,
-        posts: list[dict],
+        self, page: Page, posts: list[dict],
         delay_range: tuple = (60, 300),
     ) -> list[dict]:
-        """批次發布多篇貼文
-
-        Args:
-            page: Playwright Page
-            posts: [{"content": str, "images": [str]}, ...]
-            delay_range: 每篇間的隨機延遲 (min_seconds, max_seconds)
-
-        Returns:
-            [{"success": bool, ...}, ...]
-        """
         results = []
-        for i, post_data in enumerate(posts):
+        for i, p in enumerate(posts):
             if i > 0:
-                delay = random.randint(*delay_range)
-                log("THREADS", "schedule", f"等待 {delay}s 後發下一篇...", "⏳")
-                await asyncio.sleep(delay)
-
-            result = await self.post_thread(
-                page,
-                content=post_data.get("content", ""),
-                image_paths=post_data.get("images"),
-            )
-            results.append(result)
-
+                d = random.randint(*delay_range)
+                log("THREADS", "schedule", f"等 {d}s...", "⏳")
+                await asyncio.sleep(d)
+            r = await self.post_thread(page, p.get("content", ""), p.get("images"))
+            results.append(r)
         return results
